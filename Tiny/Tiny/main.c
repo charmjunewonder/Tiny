@@ -14,7 +14,7 @@
 #define strbufsize 1024
 #define errbufsize 1024
 
-int look;
+char look;
 
 //Report an Error
 void error(char *err){
@@ -61,8 +61,13 @@ void match(char c){
 //Recognize a decimal digit
 #define isDigit(c) isdigit(c)
 
+//Recognize an addop
+int isAddop(char c){
+    return '+'==c || '-'==c;
+}
+
 //Get an identifier
-char getname(){
+char getName(){
     char retval = 0;
 	if (!isAlpha(look)){
         expected("Name");
@@ -76,8 +81,8 @@ char getname(){
 //Get a number
 char getNum(){
     char retval = 0;
-    if(!isAlpha(look)){
-        expected("Name");
+    if(!isdigit(look)){
+        expected("Integer");
     }else{
         retval = toupper(look);
         getChar();
@@ -95,6 +100,99 @@ void emitln(char *s){
     printf("\t%s\n", s);
 }
 
+//forward declaration
+void expression();
+
+//Parse and Translate a Math Factor 
+void factor(){
+    char strbuf[strbufsize];
+    if('('==look){
+        match('(');
+        expression();
+        match(')');
+    }else{
+        snprintf(strbuf, strbufsize, "movl\t$%c,%%eax", getNum());
+        emitln(strbuf);
+    }
+}
+
+//Recognize and Translate a Multiply
+void multiply(){
+    match('*');
+    factor();
+    emitln("pop\t%ebx"); //pop top of stack to ebx
+    emitln("mul\t%ebx"); //multiply eax by ebx
+}
+
+//Recognize and Translate a Divide
+void divide(){
+    match('/');
+    factor();
+    emitln("mov\t%eax,%ebx"); //move second factor to ebx
+    emitln("pop\t%eax"); //pop first factor into eax
+    emitln("xor\t%edx,%edx"); //clear high word of dividend
+    emitln("div\t%ebx"); //divide first factor by second factor
+}
+
+//Parse and Translate a Math Term
+void term(){
+    factor();
+    while ('*'==look || '/'==look) {
+        emitln("push\t%eax");
+        switch (look) {
+            case '*':
+                multiply();
+                break;
+            case '/':
+                divide();
+                break;
+            default:
+                expected("Mulop");
+                break;
+        }
+    }
+}
+
+//Recognize and Translate an Add
+void add(){
+    match('+');
+    term();
+    emitln("pop\t%ebx"); //pop top of stack to ebx
+    emitln("add\t%ebx,%eax"); //add ebx to eax
+}
+
+//Recognize and Translate a Subtract
+void substract(){
+	match('-');
+	term();
+	emitln("pop\t%ebx"); //pop top of stack to ebx
+	emitln("sub\t%ebx,%eax"); //subtract ebx from eax
+	emitln("neg\t%eax"); //negate eax to fix sign error
+}
+
+//Parse and translate a Math Expression
+void expression(){
+    if (isAddop(look)) {
+        emitln("xor\t%eax,%eax"); //unary - or + so first operand is zero
+    }else{
+        term();
+    }
+    while (isAddop(look)) {
+        emitln("push\t%eax"); //push eax to top of stack
+        switch (look) {
+            case '+':
+                add();
+                break;
+            case '-':
+                substract();
+                break;
+            default:
+                expected("Addop");
+                break;
+        }
+    }
+}
+
 //Initialize
 void init(){
     getChar();
@@ -102,8 +200,8 @@ void init(){
 
 int main(int argc, const char * argv[])
 {
-
     init();
+    expression();
     return 0;
 }
 
